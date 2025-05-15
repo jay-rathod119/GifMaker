@@ -2,6 +2,46 @@
 
 A Python application that allows you to fetch images from URLs or select local images to create animated GIFs with custom transitions.
 
+## Vercel Deployment
+
+This project can be deployed on Vercel as a serverless application. Due to the limitations of serverless environments, the version deployed on Vercel offers limited functionality compared to the full desktop version.
+
+### Deployment Issues
+
+If you encounter the error `500: INTERNAL_SERVER_ERROR Code: FUNCTION_INVOCATION_FAILED`, this is likely because:
+
+1. Serverless functions can't write to the filesystem persistently
+2. The app originally used local file storage for images and GIFs
+3. Memory limitations in serverless environments
+
+### How to Fix
+
+The repository now includes a Vercel-compatible version in the `api/` directory. This version:
+
+- Stores images in memory using base64 encoding
+- Provides a simplified interface
+- Removes features that are incompatible with serverless environments
+
+To deploy on Vercel:
+
+1. Push the code to GitHub
+2. Connect your Vercel account to GitHub
+3. Select the repository
+4. Configure as follows:
+   - Framework: Other
+   - Root Directory: ./
+   - Build Command: (leave default)
+   - Output Directory: (leave default)
+
+## Local Development
+
+For local development with full functionality:
+
+```bash
+pip install -r requirements.txt
+python app.py
+```
+
 ## Features
 
 - Modern, user-friendly interface using CustomTkinter
