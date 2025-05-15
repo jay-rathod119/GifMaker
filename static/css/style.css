@@ -1,0 +1,110 @@
+/* General styles */
+body {
+    background-color: #f8f9fa;
+}
+
+.card {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border: none;
+}
+
+.card-header {
+    font-weight: bold;
+}
+
+/* Preview area styles */
+.preview-container {
+    min-height: 300px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #f1f1f1;
+    border-radius: 5px;
+    overflow: hidden;
+    position: relative;
+}
+
+.preview-container img {
+    max-width: 100%;
+    max-height: 300px;
+    object-fit: contain;
+}
+
+.no-images {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #adb5bd;
+}
+
+/* Image list styles */
+.image-item {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    transition: all 0.2s;
+}
+
+.image-item.active {
+    background-color: #e9ecef;
+    border-color: #0d6efd;
+    font-weight: bold;
+}
+
+.image-item-thumbnail {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    margin-right: 10px;
+    border-radius: 4px;
+}
+
+.animation-badge {
+    margin-left: 5px;
+    font-size: 0.8em;
+    background-color: #0d6efd;
+}
+
+/* Result area styles */
+#resultGif {
+    max-width: 100%;
+    text-align: center;
+}
+
+#resultGif img {
+    max-width: 100%;
+    max-height: 400px;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+}
+
+/* Loading indicator */
+.spinner-border {
+    width: 3rem;
+    height: 3rem;
+}
+
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .preview-container {
+        min-height: 200px;
+    }
+    
+    .preview-container img {
+        max-height: 200px;
+    }
+} 
