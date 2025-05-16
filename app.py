@@ -1,23 +1,307 @@
+from flask import Flask, render_template, request, jsonify, send_from_directory
 import os
 import io
-import uuid
-import json
-from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, url_for
-from PIL import Image, ImageOps
 import requests
+from PIL import Image
+from werkzeug.utils import secure_filename
+import uuid
 from urllib.parse import urlparse
+import base64
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload size
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
-app.config['OUTPUT_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'output')
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['OUTPUT_FOLDER'] = 'output'
 
-# Create the upload and output folders if they don't exist
+# Create folders if they don't exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
 
-# Store sessions in memory (would use Redis or a database in production)
-SESSIONS = {}
+# Store images and their animation types in memory
+# In production, you'd want to use a database or session
+session_storage = {}
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+@app.route('/fetch-image', methods=['POST'])
+def fetch_image():
+    if 'url' not in request.json:
+        return jsonify({'status': 'error', 'message': 'No URL provided'}), 400
+    
+    url = request.json['url']
+    
+    # Validate URL
+    try:
+        parsed_url = urlparse(url)
+        if not parsed_url.scheme or not parsed_url.netloc:
+            return jsonify({'status': 'error', 'message': 'Invalid URL format'}), 400
+    except Exception:
+        return jsonify({'status': 'error', 'message': 'Invalid URL format'}), 400
+    
+    try:
+        # Fetch the image
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        # Check if it's an image
+        content_type = response.headers.get('Content-Type', '')
+        if not content_type.startswith('image/'):
+            return jsonify({'status': 'error', 'message': f'URL does not point to an image: {content_type}'}), 400
+        
+        # Generate a filename from URL
+        filename = os.path.basename(urlparse(url).path)
+        if not filename or '.' not in filename:
+            filename = f"image_{uuid.uuid4().hex}.jpg"
+        
+        # Make the filename safe
+        filename = secure_filename(filename)
+        
+        # Generate a session ID if not present
+        session_id = request.json.get('session_id')
+        if not session_id:
+            session_id = uuid.uuid4().hex
+            session_storage[session_id] = {'images': [], 'animations': []}
+        elif session_id not in session_storage:
+            session_storage[session_id] = {'images': [], 'animations': []}
+        
+        # Save the image
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        with open(file_path, 'wb') as f:
+            f.write(response.content)
+        
+        # Generate a base64 preview for immediate display
+        image = Image.open(io.BytesIO(response.content))
+        # Resize for preview if needed
+        image.thumbnail((400, 400))
+        buffered = io.BytesIO()
+        image.save(buffered, format="JPEG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        
+        # Add to session storage
+        session_storage[session_id]['images'].append(file_path)
+        session_storage[session_id]['animations'].append("None")
+        
+        return jsonify({
+            'status': 'success', 
+            'filename': filename,
+            'path': file_path,
+            'preview': img_str,
+            'session_id': session_id,
+            'index': len(session_storage[session_id]['images']) - 1
+        })
+        
+    except requests.RequestException as e:
+        return jsonify({'status': 'error', 'message': f'Failed to fetch image: {str(e)}'}), 500
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Error processing image: {str(e)}'}), 500
+
+
+@app.route('/upload-image', methods=['POST'])
+def upload_image():
+    if 'file' not in request.files:
+        return jsonify({'status': 'error', 'message': 'No file part'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'status': 'error', 'message': 'No selected file'}), 400
+    
+    try:
+        # Generate a session ID if not present
+        session_id = request.form.get('session_id')
+        if not session_id:
+            session_id = uuid.uuid4().hex
+            session_storage[session_id] = {'images': [], 'animations': []}
+        elif session_id not in session_storage:
+            session_storage[session_id] = {'images': [], 'animations': []}
+        
+        # Save the file
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(file_path)
+        
+        # Generate a base64 preview
+        image = Image.open(file_path)
+        # Resize for preview
+        image.thumbnail((400, 400))
+        buffered = io.BytesIO()
+        image.save(buffered, format="JPEG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        
+        # Add to session storage
+        session_storage[session_id]['images'].append(file_path)
+        session_storage[session_id]['animations'].append("None")
+        
+        return jsonify({
+            'status': 'success', 
+            'filename': filename,
+            'path': file_path,
+            'preview': img_str,
+            'session_id': session_id,
+            'index': len(session_storage[session_id]['images']) - 1
+        })
+        
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Error processing image: {str(e)}'}), 500
+
+
+@app.route('/remove-image', methods=['POST'])
+def remove_image():
+    session_id = request.json.get('session_id')
+    index = request.json.get('index')
+    
+    if not session_id or session_id not in session_storage:
+        return jsonify({'status': 'error', 'message': 'Invalid session'}), 400
+    
+    try:
+        index = int(index)
+        if index < 0 or index >= len(session_storage[session_id]['images']):
+            return jsonify({'status': 'error', 'message': 'Invalid image index'}), 400
+        
+        # Remove the image from session storage
+        del session_storage[session_id]['images'][index]
+        if index < len(session_storage[session_id]['animations']):
+            del session_storage[session_id]['animations'][index]
+        
+        return jsonify({'status': 'success'})
+        
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Error removing image: {str(e)}'}), 500
+
+
+@app.route('/update-animation', methods=['POST'])
+def update_animation():
+    session_id = request.json.get('session_id')
+    index = request.json.get('index')
+    animation = request.json.get('animation')
+    
+    if not session_id or session_id not in session_storage:
+        return jsonify({'status': 'error', 'message': 'Invalid session'}), 400
+    
+    try:
+        index = int(index)
+        if index < 0 or index >= len(session_storage[session_id]['images']):
+            return jsonify({'status': 'error', 'message': 'Invalid image index'}), 400
+        
+        # Update the animation type
+        session_storage[session_id]['animations'][index] = animation
+        
+        return jsonify({'status': 'success'})
+        
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Error updating animation: {str(e)}'}), 500
+
+
+@app.route('/update-all-animations', methods=['POST'])
+def update_all_animations():
+    session_id = request.json.get('session_id')
+    animation = request.json.get('animation')
+    
+    if not session_id or session_id not in session_storage:
+        return jsonify({'status': 'error', 'message': 'Invalid session'}), 400
+    
+    try:
+        # Update all animation types
+        num_images = len(session_storage[session_id]['images'])
+        session_storage[session_id]['animations'] = [animation] * num_images
+        
+        return jsonify({'status': 'success'})
+        
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Error updating animations: {str(e)}'}), 500
+
+
+@app.route('/create-gif', methods=['POST'])
+def create_gif():
+    session_id = request.json.get('session_id')
+    duration = request.json.get('duration')
+    loop = request.json.get('loop')
+    transition_frames = request.json.get('transition_frames')
+    
+    if not session_id or session_id not in session_storage:
+        return jsonify({'status': 'error', 'message': 'Invalid session'}), 400
+    
+    try:
+        duration = int(duration)
+        loop = int(loop)
+        transition_frames = int(transition_frames)
+        
+        if duration <= 0:
+            return jsonify({'status': 'error', 'message': 'Duration must be greater than 0'}), 400
+        
+        if transition_frames < 0:
+            return jsonify({'status': 'error', 'message': 'Transition frames must be 0 or greater'}), 400
+        
+        # Get the images
+        image_paths = session_storage[session_id]['images']
+        animations = session_storage[session_id]['animations']
+        
+        if not image_paths:
+            return jsonify({'status': 'error', 'message': 'No images to create GIF'}), 400
+        
+        # Load images
+        images = [Image.open(path) for path in image_paths]
+        
+        # Resize all images to the same size (using the size of the first image)
+        base_width, base_height = images[0].size
+        resized_images = []
+        
+        for img in images:
+            if img.size != (base_width, base_height):
+                resized = img.resize((base_width, base_height), Image.LANCZOS)
+                resized_images.append(resized)
+            else:
+                resized_images.append(img.copy())
+        
+        # Create the final frames including transitions
+        final_frames = []
+        
+        for i in range(len(resized_images)):
+            # Add the current frame
+            final_frames.append(resized_images[i])
+            
+            # Add transition to the next frame if it's not the last frame
+            if i < len(resized_images) - 1:
+                # Get animation type for the current image
+                animation_type = animations[i] if i < len(animations) else "None"
+                
+                # Create transition frames
+                transition = create_transition_frames(
+                    resized_images[i], 
+                    resized_images[(i + 1) % len(resized_images)],
+                    animation_type,
+                    transition_frames
+                )
+                
+                # Add transition frames
+                final_frames.extend(transition)
+        
+        # Create a unique filename for the GIF
+        output_filename = f"output_{uuid.uuid4().hex}.gif"
+        output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_filename)
+        
+        # Save as gif
+        final_frames[0].save(
+            output_path,
+            format='GIF',
+            append_images=final_frames[1:],
+            save_all=True,
+            duration=duration,
+            loop=loop,
+            optimize=False
+        )
+        
+        return jsonify({
+            'status': 'success', 
+            'filename': output_filename,
+            'path': output_path
+        })
+        
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Error creating GIF: {str(e)}'}), 500
+
 
 def create_transition_frames(prev_img, next_img, transition_type, num_frames):
     frames = []
@@ -126,353 +410,14 @@ def create_transition_frames(prev_img, next_img, transition_type, num_frames):
                 frame.paste(shrinking_img, (left, top))
             
             frames.append(frame)
-    
+            
     return frames
 
-def create_gif(session_id, duration, loop, transition_frames):
-    session = SESSIONS.get(session_id)
-    if not session or not session.get('images'):
-        return None, "No images found in session"
-    
-    try:
-        # Get all images and their animations
-        images = session['images']
-        animations = session.get('animations', [])
-        
-        # Set default animations if not provided
-        while len(animations) < len(images):
-            animations.append("None")
-        
-        # Resize all images to the same size (using the size of the first image)
-        first_img = Image.open(images[0]['path'])
-        base_width, base_height = first_img.size
-        first_img.close()
-        
-        resized_images = []
-        
-        for img_data in images:
-            img = Image.open(img_data['path'])
-            if img.size != (base_width, base_height):
-                resized = img.resize((base_width, base_height), Image.LANCZOS)
-                resized_images.append(resized)
-            else:
-                resized_images.append(img.copy())
-        
-        # Create the final frames including transitions
-        final_frames = []
-        
-        for i in range(len(resized_images)):
-            # Add the current frame
-            final_frames.append(resized_images[i])
-            
-            # Add transition to the next frame if it's not the last frame
-            if i < len(resized_images) - 1:
-                # Get animation type for the current image
-                animation_type = animations[i] if i < len(animations) else "None"
-                
-                # Create transition frames
-                transition = create_transition_frames(
-                    resized_images[i], 
-                    resized_images[(i + 1) % len(resized_images)],
-                    animation_type,
-                    transition_frames
-                )
-                
-                # Add transition frames
-                final_frames.extend(transition)
-        
-        # Generate a random filename
-        filename = f"gif_{uuid.uuid4().hex}.gif"
-        filepath = os.path.join(app.config['OUTPUT_FOLDER'], filename)
-        
-        # Save as gif
-        final_frames[0].save(
-            filepath,
-            format='GIF',
-            append_images=final_frames[1:],
-            save_all=True,
-            duration=duration,
-            loop=loop,
-            optimize=False
-        )
-        
-        # Close all the images
-        for img in resized_images:
-            img.close()
-        
-        return filename, None
-    
-    except Exception as e:
-        return None, str(e)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+@app.route('/download/<filename>')
+def download_file(filename):
+    return send_from_directory(app.config['OUTPUT_FOLDER'], filename, as_attachment=True)
 
-@app.route('/api/session', methods=['POST'])
-def create_session():
-    session_id = str(uuid.uuid4())
-    SESSIONS[session_id] = {
-        'images': [],
-        'animations': []
-    }
-    return jsonify({'session_id': session_id})
-
-@app.route('/api/upload', methods=['POST'])
-def upload_file():
-    session_id = request.form.get('session_id')
-    
-    if not session_id or session_id not in SESSIONS:
-        return jsonify({'error': 'Invalid session ID'}), 400
-    
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    
-    file = request.files['file']
-    
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    
-    if file:
-        try:
-            # Generate a unique filename
-            filename = f"{uuid.uuid4().hex}_{file.filename}"
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            
-            # Save the file
-            file.save(filepath)
-            
-            # Open the image to validate and get dimensions
-            with Image.open(filepath) as img:
-                width, height = img.size
-            
-            # Add to session
-            image_data = {
-                'id': len(SESSIONS[session_id]['images']),
-                'filename': file.filename,
-                'path': filepath,
-                'width': width,
-                'height': height
-            }
-            
-            SESSIONS[session_id]['images'].append(image_data)
-            SESSIONS[session_id]['animations'].append("None")
-            
-            # Create thumbnail for preview
-            thumbnail_path = os.path.join(app.config['UPLOAD_FOLDER'], f"thumb_{filename}")
-            with Image.open(filepath) as img:
-                img.thumbnail((200, 200))
-                img.save(thumbnail_path)
-            
-            return jsonify({
-                'success': True,
-                'image': {
-                    'id': image_data['id'],
-                    'filename': image_data['filename'],
-                    'thumbnail': f"/uploads/thumb_{filename}",
-                    'width': width,
-                    'height': height
-                }
-            })
-            
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
-    
-    return jsonify({'error': 'Unknown error'}), 500
-
-@app.route('/api/fetch-image', methods=['POST'])
-def fetch_image():
-    session_id = request.json.get('session_id')
-    image_url = request.json.get('url')
-    
-    if not session_id or session_id not in SESSIONS:
-        return jsonify({'error': 'Invalid session ID'}), 400
-    
-    if not image_url:
-        return jsonify({'error': 'No URL provided'}), 400
-    
-    try:
-        # Download the image
-        response = requests.get(image_url, timeout=10)
-        response.raise_for_status()
-        
-        # Check if it's an image
-        content_type = response.headers.get('Content-Type', '')
-        if not content_type.startswith('image/'):
-            return jsonify({'error': f"URL does not point to an image: {content_type}"}), 400
-        
-        # Generate a filename from URL
-        parsed_url = urlparse(image_url)
-        filename = os.path.basename(parsed_url.path)
-        if not filename or '.' not in filename:
-            filename = f"image_{len(SESSIONS[session_id]['images'])}.jpg"
-        
-        # Generate a unique filename
-        unique_filename = f"{uuid.uuid4().hex}_{filename}"
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-        
-        # Save the image
-        with open(filepath, 'wb') as f:
-            f.write(response.content)
-        
-        # Open the image to validate and get dimensions
-        with Image.open(io.BytesIO(response.content)) as img:
-            width, height = img.size
-            
-            # Save thumbnail for preview
-            thumbnail_path = os.path.join(app.config['UPLOAD_FOLDER'], f"thumb_{unique_filename}")
-            img.thumbnail((200, 200))
-            img.save(thumbnail_path)
-        
-        # Add to session
-        image_data = {
-            'id': len(SESSIONS[session_id]['images']),
-            'filename': filename,
-            'path': filepath,
-            'width': width,
-            'height': height
-        }
-        
-        SESSIONS[session_id]['images'].append(image_data)
-        SESSIONS[session_id]['animations'].append("None")
-        
-        return jsonify({
-            'success': True,
-            'image': {
-                'id': image_data['id'],
-                'filename': image_data['filename'],
-                'thumbnail': f"/uploads/thumb_{unique_filename}",
-                'width': width,
-                'height': height
-            }
-        })
-        
-    except requests.RequestException as e:
-        return jsonify({'error': f"Failed to fetch image: {str(e)}"}), 500
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/set-animation', methods=['POST'])
-def set_animation():
-    session_id = request.json.get('session_id')
-    image_id = request.json.get('image_id')
-    animation_type = request.json.get('animation_type')
-    
-    if not session_id or session_id not in SESSIONS:
-        return jsonify({'error': 'Invalid session ID'}), 400
-    
-    if image_id is None:
-        return jsonify({'error': 'No image ID provided'}), 400
-    
-    if not animation_type:
-        return jsonify({'error': 'No animation type provided'}), 400
-    
-    if image_id >= len(SESSIONS[session_id]['images']):
-        return jsonify({'error': 'Invalid image ID'}), 400
-    
-    # Update the animation
-    while len(SESSIONS[session_id]['animations']) <= image_id:
-        SESSIONS[session_id]['animations'].append("None")
-    
-    SESSIONS[session_id]['animations'][image_id] = animation_type
-    
-    return jsonify({'success': True})
-
-@app.route('/api/set-all-animations', methods=['POST'])
-def set_all_animations():
-    session_id = request.json.get('session_id')
-    animation_type = request.json.get('animation_type')
-    
-    if not session_id or session_id not in SESSIONS:
-        return jsonify({'error': 'Invalid session ID'}), 400
-    
-    if not animation_type:
-        return jsonify({'error': 'No animation type provided'}), 400
-    
-    # Update all animations
-    num_images = len(SESSIONS[session_id]['images'])
-    SESSIONS[session_id]['animations'] = [animation_type] * num_images
-    
-    return jsonify({'success': True})
-
-@app.route('/api/remove-image', methods=['POST'])
-def remove_image():
-    session_id = request.json.get('session_id')
-    image_id = request.json.get('image_id')
-    
-    if not session_id or session_id not in SESSIONS:
-        return jsonify({'error': 'Invalid session ID'}), 400
-    
-    if image_id is None:
-        return jsonify({'error': 'No image ID provided'}), 400
-    
-    if image_id >= len(SESSIONS[session_id]['images']):
-        return jsonify({'error': 'Invalid image ID'}), 400
-    
-    # Remove the image and its animation
-    removed_image = SESSIONS[session_id]['images'].pop(image_id)
-    
-    if image_id < len(SESSIONS[session_id]['animations']):
-        SESSIONS[session_id]['animations'].pop(image_id)
-    
-    # Update the IDs of the remaining images
-    for i in range(image_id, len(SESSIONS[session_id]['images'])):
-        SESSIONS[session_id]['images'][i]['id'] = i
-    
-    # Remove the actual file (optional)
-    try:
-        if os.path.exists(removed_image['path']):
-            os.remove(removed_image['path'])
-    except:
-        pass
-    
-    return jsonify({'success': True})
-
-@app.route('/api/create-gif', methods=['POST'])
-def generate_gif():
-    session_id = request.json.get('session_id')
-    duration = request.json.get('duration', 200)
-    loop = request.json.get('loop', 0)
-    transition_frames = request.json.get('transition_frames', 10)
-    
-    if not session_id or session_id not in SESSIONS:
-        return jsonify({'error': 'Invalid session ID'}), 400
-    
-    if not SESSIONS[session_id]['images']:
-        return jsonify({'error': 'No images in the session'}), 400
-    
-    try:
-        duration = int(duration)
-        loop = int(loop)
-        transition_frames = int(transition_frames)
-        
-        if duration <= 0:
-            return jsonify({'error': 'Duration must be greater than 0'}), 400
-        
-        if transition_frames < 0:
-            return jsonify({'error': 'Transition frames must be 0 or greater'}), 400
-    
-    except ValueError:
-        return jsonify({'error': 'Invalid numerical values'}), 400
-    
-    filename, error = create_gif(session_id, duration, loop, transition_frames)
-    
-    if error:
-        return jsonify({'error': error}), 500
-    
-    return jsonify({
-        'success': True,
-        'gif_url': f"/output/{filename}",
-        'filename': filename
-    })
-
-@app.route('/uploads/<filename>')
-def uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
-@app.route('/output/<filename>')
-def output_file(filename):
-    return send_from_directory(app.config['OUTPUT_FOLDER'], filename)
 
 if __name__ == '__main__':
     app.run(debug=True) 
