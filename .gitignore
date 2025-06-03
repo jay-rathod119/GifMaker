@@ -20,3 +20,4 @@ env/
 # macOS
 .DS_Store 
 .vercel
+github_push.sh
