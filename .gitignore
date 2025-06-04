@@ -18,6 +18,4 @@ env/
 .vscode/
 
 # macOS
-.DS_Store 
-.vercel
-github_push.sh
+.DS_Store
