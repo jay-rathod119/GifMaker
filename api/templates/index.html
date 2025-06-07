@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GIF Maker</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .card {
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .preview-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 300px;
+            background-color: #eee;
+            margin-bottom: 15px;
+            border-radius: 5px;
+        }
+        .preview-img {
+            max-width: 100%;
+            max-height: 300px;
+        }
+        .nav-buttons {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+        .image-list {
+            height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 15px;
+            background-color: white;
+            border-radius: 5px;
+        }
+        .image-item {
+            padding: 5px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+        }
+        .image-item:hover {
+            background-color: #f5f5f5;
+        }
+        .image-item.active {
+            background-color: #e0f7fa;
+        }
+        .create-gif-btn {
+            margin-top: 20px;
+        }
+        .status-bar {
+            margin-top: 10px;
+            padding: 5px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .selected {
+            background-color: #e0f7fa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="display-4">GIF Maker</h1>
+        </div>
+        
+        <div class="row">
+            <!-- Left Column - Controls -->
+            <div class="col-md-4">
+                <!-- Image Source -->
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">Image Source</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- URL Input -->
+                        <div class="mb-3">
+                            <label for="imageUrl" class="form-label">Image URL:</label>
+                            <input type="text" class="form-control" id="imageUrl">
+                            <button class="btn btn-primary mt-2 w-100" id="fetchBtn">Fetch Image</button>
+                        </div>
+                        
+                        <!-- File Upload -->
+                        <div class="mb-3">
+                            <label for="imageFile" class="form-label">Local Images:</label>
+                            <input class="form-control" type="file" id="imageFile" accept="image/*">
+                            <button class="btn btn-primary mt-2 w-100" id="uploadBtn">Upload Image</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Animation Settings -->
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">Animation Settings</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="animationType" class="form-label">Transition Type:</label>
+                            <select class="form-select" id="animationType">
+                                <option value="None">None</option>
+                                <option value="Instant">Instant</option>
+                                <option value="Fade in">Fade in</option>
+                                <option value="Slide up">Slide up</option>
+                                <option value="Slide down">Slide down</option>
+                                <option value="Slide right">Slide right</option>
+                                <option value="Slide left">Slide left</option>
+                                <option value="Grow">Grow</option>
+                                <option value="Shrink">Shrink</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-success mb-2 w-100" id="applyAnimationBtn">Apply to Selected Image</button>
+                        <button class="btn btn-success w-100" id="applyAllBtn">Apply to All Images</button>
+                    </div>
+                </div>
+                
+                <!-- GIF Settings -->
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">GIF Settings</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="duration" class="form-label">Frame Duration (ms):</label>
+                            <input type="number" class="form-control" id="duration" value="200">
+                        </div>
+                        <div class="mb-3">
+                            <label for="loop" class="form-label">Loop Count (0 = infinite):</label>
+                            <input type="number" class="form-control" id="loop" value="0">
+                        </div>
+                        <div class="mb-3">
+                            <label for="transitionFrames" class="form-label">Transition Frames:</label>
+                            <input type="number" class="form-control" id="transitionFrames" value="10">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Create GIF Button -->
+                <button class="btn btn-danger btn-lg w-100 create-gif-btn" id="createGifBtn" disabled>Create GIF</button>
+                
+                <!-- Status -->
+                <div class="status-bar" id="statusBar">Status: Ready</div>
+            </div>
+            
+            <!-- Right Column - Preview -->
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">Image Preview</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Preview Area -->
+                        <div class="preview-container" id="previewContainer">
+                            <div id="noImageMessage">No images loaded</div>
+                            <img id="previewImage" class="preview-img" style="display: none;">
+                        </div>
+                        
+                        <!-- Navigation Buttons -->
+                        <div class="nav-buttons">
+                            <button class="btn btn-primary" id="prevBtn" disabled>Previous</button>
+                            <span id="imageCounter">0/0</span>
+                            <button class="btn btn-primary" id="nextBtn" disabled>Next</button>
+                        </div>
+                        
+                        <!-- Image List -->
+                        <div>
+                            <h6>Added Images:</h6>
+                            <div class="image-list" id="imageList"></div>
+                            <button class="btn btn-danger" id="removeBtn" disabled>Remove Selected</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Result Section (appears after GIF creation) -->
+                <div class="card mt-3" id="resultCard" style="display: none;">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">Generated GIF</h5>
+                    </div>
+                    <div class="card-body text-center">
+                        <img id="resultGif" class="img-fluid mb-3" style="max-height: 300px;">
+                        <div>
+                            <a id="downloadLink" class="btn btn-success">Download GIF</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Variables
+            let sessionId = null;
+            const images = [];
+            let currentIndex = -1;
+            
+            // UI Elements
+            const imageUrlInput = document.getElementById('imageUrl');
+            const imageFileInput = document.getElementById('imageFile');
+            const fetchBtn = document.getElementById('fetchBtn');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            const removeBtn = document.getElementById('removeBtn');
+            const createGifBtn = document.getElementById('createGifBtn');
+            const applyAnimationBtn = document.getElementById('applyAnimationBtn');
+            const applyAllBtn = document.getElementById('applyAllBtn');
+            const previewImage = document.getElementById('previewImage');
+            const noImageMessage = document.getElementById('noImageMessage');
+            const imageCounter = document.getElementById('imageCounter');
+            const imageList = document.getElementById('imageList');
+            const statusBar = document.getElementById('statusBar');
+            const animationType = document.getElementById('animationType');
+            const duration = document.getElementById('duration');
+            const loop = document.getElementById('loop');
+            const transitionFrames = document.getElementById('transitionFrames');
+            const resultCard = document.getElementById('resultCard');
+            const resultGif = document.getElementById('resultGif');
+            const downloadLink = document.getElementById('downloadLink');
+            
+            // Event Listeners
+            fetchBtn.addEventListener('click', fetchImage);
+            uploadBtn.addEventListener('click', handleFileUpload);
+            imageFileInput.addEventListener('change', handleFileInputChange);
+            prevBtn.addEventListener('click', showPreviousImage);
+            nextBtn.addEventListener('click', showNextImage);
+            removeBtn.addEventListener('click', removeSelectedImage);
+            createGifBtn.addEventListener('click', createGif);
+            applyAnimationBtn.addEventListener('click', applyAnimationToSelected);
+            applyAllBtn.addEventListener('click', applyAnimationToAll);
+            
+            // Fetch image from URL
+            function fetchImage() {
+                const url = imageUrlInput.value.trim();
+                if (!url) {
+                    alert('Please enter a URL');
+                    return;
+                }
+                
+                statusBar.textContent = 'Status: Fetching image...';
+                
+                fetch('/fetch-image', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        url: url,
+                        session_id: sessionId
+                    }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Store the session ID
+                        sessionId = data.session_id;
+                        
+                        // Add image to array
+                        images.push({
+                            filename: data.filename,
+                            path: data.path,
+                            preview: data.preview,
+                            animation: 'None',
+                            index: data.index
+                        });
+                        
+                        // Show the new image
+                        currentIndex = images.length - 1;
+                        updatePreview();
+                        updateImageList();
+                        updateUIState();
+                        
+                        statusBar.textContent = `Status: Image added: ${data.filename}`;
+                        imageUrlInput.value = '';
+                    } else {
+                        alert(`Error: ${data.message}`);
+                        statusBar.textContent = 'Status: Error fetching image';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to fetch image');
+                    statusBar.textContent = 'Status: Error fetching image';
+                });
+            }
+            
+            // Handle file input change
+            function handleFileInputChange() {
+                if (imageFileInput.files.length > 0) {
+                    uploadBtn.disabled = false;
+                } else {
+                    uploadBtn.disabled = true;
+                }
+            }
+            
+            // Upload local file
+            function handleFileUpload() {
+                if (!imageFileInput.files || imageFileInput.files.length === 0) {
+                    return;
+                }
+                
+                const file = imageFileInput.files[0];
+                const formData = new FormData();
+                formData.append('file', file);
+                if (sessionId) {
+                    formData.append('session_id', sessionId);
+                }
+                
+                statusBar.textContent = 'Status: Uploading image...';
+                
+                fetch('/upload-image', {
+                    method: 'POST',
+                    body: formData,
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Store the session ID
+                        sessionId = data.session_id;
+                        
+                        // Add image to array
+                        images.push({
+                            filename: data.filename,
+                            path: data.path,
+                            preview: data.preview,
+                            animation: 'None',
+                            index: data.index
+                        });
+                        
+                        // Show the new image
+                        currentIndex = images.length - 1;
+                        updatePreview();
+                        updateImageList();
+                        updateUIState();
+                        
+                        statusBar.textContent = `Status: Image added: ${data.filename}`;
+                        imageFileInput.value = '';
+                    } else {
+                        alert(`Error: ${data.message}`);
+                        statusBar.textContent = 'Status: Error uploading image';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to upload image');
+                    statusBar.textContent = 'Status: Error uploading image';
+                });
+            }
+            
+            // Update the preview display
+            function updatePreview() {
+                if (images.length === 0 || currentIndex < 0 || currentIndex >= images.length) {
+                    noImageMessage.style.display = 'block';
+                    previewImage.style.display = 'none';
+                    imageCounter.textContent = '0/0';
+                    return;
+                }
+                
+                const image = images[currentIndex];
+                
+                // Show the image
+                noImageMessage.style.display = 'none';
+                previewImage.style.display = 'block';
+                previewImage.src = `data:image/jpeg;base64,${image.preview}`;
+                
+                // Update counter
+                imageCounter.textContent = `${currentIndex + 1}/${images.length}`;
+                
+                // Update animation dropdown to match current image
+                animationType.value = image.animation;
+            }
+            
+            // Update the image list display
+            function updateImageList() {
+                imageList.innerHTML = '';
+                
+                images.forEach((image, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'image-item';
+                    if (index === currentIndex) {
+                        item.classList.add('active');
+                    }
+                    item.textContent = `${index + 1}. ${image.filename} [${image.animation}]`;
+                    item.dataset.index = index;
+                    
+                    item.addEventListener('click', function() {
+                        currentIndex = parseInt(this.dataset.index);
+                        updatePreview();
+                        updateImageList();
+                    });
+                    
+                    imageList.appendChild(item);
+                });
+            }
+            
+            // Update UI state based on current data
+            function updateUIState() {
+                const hasImages = images.length > 0;
+                
+                createGifBtn.disabled = !hasImages;
+                prevBtn.disabled = !hasImages || images.length <= 1;
+                nextBtn.disabled = !hasImages || images.length <= 1;
+                removeBtn.disabled = !hasImages;
+                applyAnimationBtn.disabled = !hasImages;
+                applyAllBtn.disabled = !hasImages;
+            }
+            
+            // Show previous image
+            function showPreviousImage() {
+                if (images.length === 0) return;
+                
+                currentIndex = (currentIndex - 1 + images.length) % images.length;
+                updatePreview();
+                updateImageList();
+            }
+            
+            // Show next image
+            function showNextImage() {
+                if (images.length === 0) return;
+                
+                currentIndex = (currentIndex + 1) % images.length;
+                updatePreview();
+                updateImageList();
+            }
+            
+            // Remove selected image
+            function removeSelectedImage() {
+                if (images.length === 0 || currentIndex < 0 || currentIndex >= images.length) return;
+                
+                statusBar.textContent = 'Status: Removing image...';
+                
+                fetch('/remove-image', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        index: currentIndex
+                    }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Remove from our array
+                        images.splice(currentIndex, 1);
+                        
+                        // Update the current index
+                        if (images.length > 0) {
+                            currentIndex = Math.min(currentIndex, images.length - 1);
+                        } else {
+                            currentIndex = -1;
+                        }
+                        
+                        updatePreview();
+                        updateImageList();
+                        updateUIState();
+                        
+                        statusBar.textContent = 'Status: Image removed';
+                    } else {
+                        alert(`Error: ${data.message}`);
+                        statusBar.textContent = 'Status: Error removing image';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to remove image');
+                    statusBar.textContent = 'Status: Error removing image';
+                });
+            }
+            
+            // Apply animation to selected image
+            function applyAnimationToSelected() {
+                if (images.length === 0 || currentIndex < 0 || currentIndex >= images.length) {
+                    alert('No image selected');
+                    return;
+                }
+                
+                const animation = animationType.value;
+                
+                fetch('/update-animation', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        index: currentIndex,
+                        animation: animation
+                    }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Update our local data
+                        images[currentIndex].animation = animation;
+                        
+                        // Update the image list
+                        updateImageList();
+                        
+                        statusBar.textContent = `Status: Applied '${animation}' to image ${currentIndex + 1}`;
+                    } else {
+                        alert(`Error: ${data.message}`);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to update animation');
+                });
+            }
+            
+            // Apply animation to all images
+            function applyAnimationToAll() {
+                if (images.length === 0) {
+                    alert('No images loaded');
+                    return;
+                }
+                
+                const animation = animationType.value;
+                
+                fetch('/update-all-animations', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        animation: animation
+                    }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Update our local data
+                        for (let i = 0; i < images.length; i++) {
+                            images[i].animation = animation;
+                        }
+                        
+                        // Update the image list
+                        updateImageList();
+                        
+                        statusBar.textContent = `Status: Applied '${animation}' to all images`;
+                    } else {
+                        alert(`Error: ${data.message}`);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to update animations');
+                });
+            }
+            
+            // Create GIF
+            function createGif() {
+                if (images.length === 0) {
+                    alert('No images to create GIF');
+                    return;
+                }
+                
+                // Get settings
+                const durationVal = parseInt(duration.value);
+                const loopVal = parseInt(loop.value);
+                const framesVal = parseInt(transitionFrames.value);
+                
+                if (isNaN(durationVal) || durationVal <= 0) {
+                    alert('Duration must be greater than 0');
+                    return;
+                }
+                
+                if (isNaN(loopVal) || loopVal < 0) {
+                    alert('Loop count must be 0 or greater');
+                    return;
+                }
+                
+                if (isNaN(framesVal) || framesVal < 0) {
+                    alert('Transition frames must be 0 or greater');
+                    return;
+                }
+                
+                statusBar.textContent = 'Status: Creating GIF...';
+                createGifBtn.disabled = true;
+                
+                fetch('/create-gif', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        duration: durationVal,
+                        loop: loopVal,
+                        transition_frames: framesVal
+                    }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        statusBar.textContent = `Status: GIF created: ${data.filename}`;
+                        
+                        // Show the result
+                        resultGif.src = `/download/${data.filename}`;
+                        downloadLink.href = `/download/${data.filename}`;
+                        downloadLink.download = data.filename;
+                        resultCard.style.display = 'block';
+                    } else {
+                        alert(`Error: ${data.message}`);
+                        statusBar.textContent = 'Status: Error creating GIF';
+                    }
+                    
+                    createGifBtn.disabled = false;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to create GIF');
+                    statusBar.textContent = 'Status: Error creating GIF';
+                    createGifBtn.disabled = false;
+                });
+            }
+        });
+    </script>
+</body>
+</html>
