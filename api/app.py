@@ -12,12 +12,9 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['OUTPUT_FOLDER'] = 'output'
 
-# Create folders if they don't exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
 
-# Store images and their animation types in memory
-# In production, you'd want to use a database or session
 session_storage = {}
 
 
