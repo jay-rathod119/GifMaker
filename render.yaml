@@ -9,4 +9,6 @@ services:
         value: 3.11.0
       - key: PORT
         value: 10000
+      - key: FLASK_APP
+        value: app.py
     autoDeploy: true 
